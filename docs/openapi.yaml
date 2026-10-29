@@ -1,0 +1,402 @@
+openapi: 3.1.0
+info:
+  title: AuthPin API
+  version: 1.0.0
+  description: >
+    Standalone, universal OTP generation, direct multi-channel dispatch, and blind
+    verification service with encrypted-at-rest persistence and pluggable storage backends.
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  /api/v1/otp/generate:
+    post:
+      summary: Generate and dispatch OTP
+      description: >
+        Creates a cryptographically secure OTP, hashes it, encrypts recipient details,
+        persists the session, and dispatches the code directly to the recipient via Email or SMS.
+        Returns an opaque tracking hash (`verification_token`) to the caller.
+      parameters:
+        - in: header
+          name: X-API-Key
+          schema:
+            type: string
+          required: false
+          description: API key for multi-tenant authentication
+        - in: header
+          name: X-Project-ID
+          schema:
+            type: string
+          required: false
+          description: Project / tenant partition identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateRequest'
+      responses:
+        '201':
+          description: OTP successfully generated and dispatched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+        '400':
+          description: Bad request or validation failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+
+  /api/v1/otp/verify:
+    post:
+      summary: Verify OTP
+      description: >
+        Validates the user-submitted OTP against the opaque tracking token.
+        Enforces dynamic expiry, constant-time comparison, and maximum attempt limits.
+        Upon success, returns a signed JWT assertion proof.
+      parameters:
+        - in: header
+          name: X-API-Key
+          schema:
+            type: string
+          required: false
+        - in: header
+          name: X-Project-ID
+          schema:
+            type: string
+          required: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyRequest'
+      responses:
+        '200':
+          description: Verification succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyResponse'
+        '401':
+          description: Invalid OTP code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyResponse'
+        '404':
+          description: Verification token not found
+        '409':
+          description: Session already verified (replay rejected)
+        '410':
+          description: OTP session expired
+        '429':
+          description: Maximum attempts exceeded
+
+  /api/v1/otp/resend:
+    post:
+      summary: Resend OTP
+      description: Generates a fresh OTP code for an active pending session and redispatches it across all configured channels.
+      parameters:
+        - in: header
+          name: X-API-Key
+          schema:
+            type: string
+        - in: header
+          name: X-Project-ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - verification_token
+              properties:
+                verification_token:
+                  type: string
+                  example: "vtok_f47ac10b58cc4372a5670e02b2c3d479"
+      responses:
+        '200':
+          description: OTP successfully redispatched
+        '404':
+          description: Session not found
+        '410':
+          description: Session expired
+
+  /api/v1/otp/revoke:
+    post:
+      summary: Revoke OTP
+      description: Cancels and invalidates an active pending OTP session immediately.
+      parameters:
+        - in: header
+          name: X-API-Key
+          schema:
+            type: string
+        - in: header
+          name: X-Project-ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - verification_token
+              properties:
+                verification_token:
+                  type: string
+                  example: "vtok_f47ac10b58cc4372a5670e02b2c3d479"
+                reason:
+                  type: string
+                  example: "user cancelled login"
+      responses:
+        '200':
+          description: Session revoked successfully
+
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: authpin
+
+  /livez:
+    get:
+      summary: Liveness probe
+      description: Returns 200 if the server process is alive and unblocked.
+      responses:
+        '200':
+          description: Process alive
+
+  /readyz:
+    get:
+      summary: Readiness probe
+      description: Verifies storage backend connectivity and readiness to accept incoming requests.
+      responses:
+        '200':
+          description: Service and storage engine are ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+                  storage:
+                    type: string
+                    example: connected
+                  service:
+                    type: string
+                    example: authpin
+        '503':
+          description: Storage backend disconnected or unready
+
+  /metrics:
+    get:
+      summary: Prometheus metrics endpoint
+      description: Exposes Prometheus-compatible operational metrics and request latencies.
+      responses:
+        '200':
+          description: Prometheus metrics formatted in text/plain
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  schemas:
+    GenerateRequest:
+      type: object
+      properties:
+        target:
+          type: string
+          description: Recipient email address or E.164 phone number (single channel)
+          example: "alice@example.com"
+        channel:
+          type: string
+          enum: [email, sms]
+          example: "email"
+        channels:
+          type: array
+          description: Deliver to multiple channels simultaneously (Email + SMS)
+          items:
+            type: object
+            required:
+              - channel
+              - target
+            properties:
+              channel:
+                type: string
+                enum: [email, sms]
+              target:
+                type: string
+                description: Destination email or phone number
+          example:
+            - channel: "email"
+              target: "alice@example.com"
+            - channel: "sms"
+              target: "+14155552671"
+        purpose:
+          type: string
+          description: Logical purpose for this OTP
+          example: "login"
+        ttl_seconds:
+          type: integer
+          description: Dynamic expiration time in seconds (30 - 3600)
+          default: 300
+          example: 300
+        otp_length:
+          type: integer
+          description: Length of OTP code (4 - 32)
+          default: 6
+          example: 6
+        otp_type:
+          type: string
+          enum: [numeric, alphanumeric]
+          description: Character set type (numeric: 0-9, alphanumeric: 0-9 & A-Z case-insensitive)
+          default: numeric
+          example: "alphanumeric"
+        digits:
+          type: integer
+          description: Deprecated alias for otp_length
+          default: 6
+          example: 6
+        max_attempts:
+          type: integer
+          description: Maximum retry attempts allowed before locking
+          default: 3
+          example: 3
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            client_ip: "203.0.113.195"
+
+    GenerateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        verification_token:
+          type: string
+          description: Public opaque tracking token returned to caller
+          example: "vtok_f47ac10b58cc4372a5670e02b2c3d479"
+        deliveries:
+          type: array
+          description: Status of each simultaneous delivery channel
+          items:
+            type: object
+            properties:
+              channel:
+                type: string
+                example: "email"
+              recipient_masked:
+                type: string
+                example: "a***e@example.com"
+              success:
+                type: boolean
+                example: true
+              error:
+                type: string
+                example: ""
+        channel:
+          type: string
+          example: "email"
+        recipient_masked:
+          type: string
+          example: "a***e@example.com"
+        expires_at:
+          type: string
+          format: date-time
+          example: "2026-10-29T15:45:00Z"
+        ttl_seconds:
+          type: integer
+          example: 300
+        otp_length:
+          type: integer
+          description: Length of the generated code
+          example: 6
+        otp_type:
+          type: string
+          enum: [numeric, alphanumeric]
+          example: "numeric"
+
+    VerifyRequest:
+      type: object
+      required:
+        - verification_token
+        - otp
+      properties:
+        verification_token:
+          type: string
+          description: The opaque tracking token received during generation
+          example: "vtok_f47ac10b58cc4372a5670e02b2c3d479"
+        otp:
+          type: string
+          description: Plain numeric code provided by user
+          example: "492018"
+        purpose:
+          type: string
+          example: "login"
+
+    VerifyResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        status:
+          type: string
+          enum: [PENDING, VERIFIED, EXHAUSTED, EXPIRED, REVOKED]
+          example: "VERIFIED"
+        message:
+          type: string
+          example: "OTP verified successfully"
+        attempts_used:
+          type: integer
+          example: 1
+        remaining_tries:
+          type: integer
+          example: 2
+        verified_at:
+          type: string
+          format: date-time
+        assertion_token:
+          type: string
+          description: Cryptographically signed JWT verification proof
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "target is required"

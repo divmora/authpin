@@ -1,0 +1,61 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: 5s
+  write_timeout: 10s
+
+# Mode: standalone (single-tenant / internal microservice) | multi_tenant (public SaaS / API keys)
+mode: "multi_tenant"
+
+# Storage Driver: postgres | dynamodb | mysql
+storage:
+  driver: "postgres"
+  postgres:
+    dsn: "postgres://user:password@localhost:5432/authpin?sslmode=disable"
+    max_connections: 20
+    min_connections: 5
+  dynamodb:
+    region: "us-east-1"
+    table_name: "authpin_sessions"
+    endpoint: "" # LocalStack or empty for real AWS
+  mysql:
+    dsn: "user:password@tcp(localhost:3306)/authpin?parseTime=true"
+    max_connections: 20
+
+security:
+  # 32-byte hex key for AES-256-GCM field encryption
+  master_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  # Algorithm for OTP hashing: argon2id | hmac_sha256
+  hash_algorithm: "argon2id"
+  # Private key for issuing signed JWT verification assertions (Ed25519 or RSA PEM)
+  jwt_private_key: ""
+  default_ttl_seconds: 300 # 5 minutes
+  max_attempts: 3
+  otp_length: 6
+
+rate_limits:
+  per_recipient_max_per_hour: 5
+  per_ip_max_per_minute: 10
+  per_tenant_max_per_minute: 100
+
+dispatchers:
+  email:
+    provider: "smtp" # smtp | ses | resend
+    from: "noreply@divmora.com"
+    from_name: "AuthPin Verification"
+    smtp:
+      host: "smtp.example.com"
+      port: 587
+      username: "user"
+      password: "secretpassword"
+      use_tls: true
+    ses:
+      region: "us-east-1"
+  sms:
+    provider: "twilio" # twilio | sns
+    twilio:
+      account_sid: "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      auth_token: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      from_phone: "+1234567890"
+    sns:
+      region: "us-east-1"

@@ -1,0 +1,23 @@
+# Binaries
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts & coverage
+*.out
+*.test
+coverage.html
+
+# Environment & local credentials
+.env
+.env.local
+config.local.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
