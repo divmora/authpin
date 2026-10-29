@@ -41,6 +41,7 @@ type OTPSession struct {
 	RecipientLookupHash string            `json:"recipient_lookup_hash"` // Blind HMAC-SHA256 index for rate-limiting
 	Channel             Channel           `json:"channel"`
 	OTPType             OTPType           `json:"otp_type"`              // numeric or alphanumeric
+	OTPLength           int               `json:"otp_length"`            // exact length of generated code (4-32)
 	Purpose             string            `json:"purpose"`
 	Attempts            int               `json:"attempts"`
 	MaxAttempts         int               `json:"max_attempts"`
@@ -73,6 +74,8 @@ type GenerateResponse struct {
 	RecipientMasked   string    `json:"recipient_masked"`
 	ExpiresAt         time.Time `json:"expires_at"`
 	TTLSeconds        int       `json:"ttl_seconds"`
+	OTPLength         int       `json:"otp_length"` // Configured length of the OTP (4 - 32)
+	OTPType           OTPType   `json:"otp_type"`   // "numeric" or "alphanumeric"
 }
 
 // VerifyRequest is submitted by downstream systems to validate user-supplied OTP.

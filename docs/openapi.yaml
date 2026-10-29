@@ -237,6 +237,14 @@ components:
         ttl_seconds:
           type: integer
           example: 300
+        otp_length:
+          type: integer
+          description: Length of the generated code
+          example: 6
+        otp_type:
+          type: string
+          enum: [numeric, alphanumeric]
+          example: "numeric"
 
     VerifyRequest:
       type: object

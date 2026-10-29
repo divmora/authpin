@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -158,6 +159,7 @@ func (s *OTPService) Generate(ctx context.Context, projectID string, req *model.
 		RecipientLookupHash: recipientLookupHash,
 		Channel:             req.Channel,
 		OTPType:             otpType,
+		OTPLength:           otpLength,
 		Purpose:             req.Purpose,
 		Attempts:            0,
 		MaxAttempts:         maxAttempts,
@@ -200,6 +202,8 @@ func (s *OTPService) Generate(ctx context.Context, projectID string, req *model.
 		RecipientMasked:   crypto.MaskRecipient(req.Target),
 		ExpiresAt:         expiresAt,
 		TTLSeconds:        ttlSeconds,
+		OTPLength:         otpLength,
+		OTPType:           otpType,
 	}, nil
 }
 
@@ -241,6 +245,12 @@ func (s *OTPService) Verify(ctx context.Context, projectID string, req *model.Ve
 		_ = s.storage.Invalidate(ctx, tokenHash, model.StatusExpired)
 		metrics.RecordVerified("expired")
 		return nil, ErrSessionExpired
+	}
+
+	// Early format & length check (prevents wasting attempts on invalid lengths)
+	cleanOTP := strings.TrimSpace(req.OTP)
+	if session.OTPLength > 0 && len(cleanOTP) != session.OTPLength {
+		return nil, fmt.Errorf("%w: expected %d characters, received %d", ErrInvalidInput, session.OTPLength, len(cleanOTP))
 	}
 
 	// Atomic attempt increment
