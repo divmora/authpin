@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/divmora/authpin/internal/metrics"
 )
 
 type Middleware func(http.Handler) http.Handler
@@ -19,13 +21,14 @@ func Chain(middlewares ...Middleware) Middleware {
 	}
 }
 
-// LoggingMiddleware logs HTTP requests with latency and method.
+// LoggingMiddleware logs HTTP requests with latency and method, and exports Prometheus metrics.
 func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rw, r)
 		duration := time.Since(start)
+		metrics.RecordRequest(r.URL.Path, r.Method, rw.status, duration)
 		log.Printf("[HTTP] %s %s %d %s", r.Method, r.URL.Path, rw.status, duration)
 	})
 }
@@ -49,8 +52,8 @@ func CORSMiddleware(next http.Handler) http.Handler {
 func APIKeyMiddleware(isMultiTenant bool, validAPIKeys map[string]string) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Bypass health check endpoints
-			if r.URL.Path == "/health" || r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/docs") {
+			// Bypass health check and metrics endpoints
+			if r.URL.Path == "/health" || r.URL.Path == "/healthz" || r.URL.Path == "/readyz" || r.URL.Path == "/livez" || r.URL.Path == "/metrics" || strings.HasPrefix(r.URL.Path, "/docs") {
 				next.ServeHTTP(w, r)
 				return
 			}

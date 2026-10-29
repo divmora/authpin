@@ -117,6 +117,50 @@ paths:
                     type: string
                     example: authpin
 
+  /livez:
+    get:
+      summary: Liveness probe
+      description: Returns 200 if the server process is alive and unblocked.
+      responses:
+        '200':
+          description: Process alive
+
+  /readyz:
+    get:
+      summary: Readiness probe
+      description: Verifies storage backend connectivity and readiness to accept incoming requests.
+      responses:
+        '200':
+          description: Service and storage engine are ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+                  storage:
+                    type: string
+                    example: connected
+                  service:
+                    type: string
+                    example: authpin
+        '503':
+          description: Storage backend disconnected or unready
+
+  /metrics:
+    get:
+      summary: Prometheus metrics endpoint
+      description: Exposes Prometheus-compatible operational metrics and request latencies.
+      responses:
+        '200':
+          description: Prometheus metrics formatted in text/plain
+          content:
+            text/plain:
+              schema:
+                type: string
+
 components:
   schemas:
     GenerateRequest:

@@ -11,6 +11,7 @@ import (
 
 	"github.com/divmora/authpin/internal/crypto"
 	"github.com/divmora/authpin/internal/dispatcher"
+	"github.com/divmora/authpin/internal/metrics"
 	"github.com/divmora/authpin/internal/model"
 	"github.com/divmora/authpin/internal/storage"
 )
@@ -189,6 +190,8 @@ func (s *OTPService) Generate(ctx context.Context, projectID string, req *model.
 		return nil, fmt.Errorf("failed to dispatch otp to recipient: %w", err)
 	}
 
+	metrics.RecordGenerated(string(req.Channel), string(session.OTPType))
+
 	// 5. Return blind response (raw OTP is NEVER returned)
 	return &model.GenerateResponse{
 		Success:           true,
@@ -220,12 +223,15 @@ func (s *OTPService) Verify(ctx context.Context, projectID string, req *model.Ve
 
 	// Replay / State checks
 	if session.Status == model.StatusVerified {
+		metrics.RecordVerified("replay_rejected")
 		return nil, ErrAlreadyVerified
 	}
 	if session.Status == model.StatusExhausted {
+		metrics.RecordVerified("exhausted")
 		return nil, ErrMaxAttemptsReached
 	}
 	if session.Status != model.StatusPending {
+		metrics.RecordVerified("invalid_state")
 		return nil, fmt.Errorf("session is in invalid state: %s", session.Status)
 	}
 
@@ -233,6 +239,7 @@ func (s *OTPService) Verify(ctx context.Context, projectID string, req *model.Ve
 	now := time.Now().UTC()
 	if now.After(session.ExpiresAt) {
 		_ = s.storage.Invalidate(ctx, tokenHash, model.StatusExpired)
+		metrics.RecordVerified("expired")
 		return nil, ErrSessionExpired
 	}
 
@@ -244,6 +251,7 @@ func (s *OTPService) Verify(ctx context.Context, projectID string, req *model.Ve
 
 	if attempts > session.MaxAttempts {
 		_ = s.storage.Invalidate(ctx, tokenHash, model.StatusExhausted)
+		metrics.RecordVerified("exhausted")
 		return nil, ErrMaxAttemptsReached
 	}
 
@@ -253,8 +261,10 @@ func (s *OTPService) Verify(ctx context.Context, projectID string, req *model.Ve
 		remaining := session.MaxAttempts - attempts
 		if remaining <= 0 {
 			_ = s.storage.Invalidate(ctx, tokenHash, model.StatusExhausted)
+			metrics.RecordVerified("exhausted")
 			return nil, fmt.Errorf("%w: maximum attempts reached", ErrInvalidOTP)
 		}
+		metrics.RecordVerified("incorrect")
 		return &model.VerifyResponse{
 			Success:        false,
 			Status:         model.StatusPending,
@@ -268,6 +278,8 @@ func (s *OTPService) Verify(ctx context.Context, projectID string, req *model.Ve
 	if err := s.storage.MarkVerified(ctx, tokenHash, now); err != nil {
 		return nil, fmt.Errorf("failed to record verification: %w", err)
 	}
+
+	metrics.RecordVerified("verified")
 
 	// Issue signed cryptographic proof
 	recipientDecrypted, _ := s.vault.DecryptField(session.RecipientEncrypted)

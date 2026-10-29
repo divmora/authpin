@@ -2,6 +2,8 @@ package api
 
 import (
 	"net/http"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // RouterConfig contains configurations for routing and security.
@@ -18,9 +20,14 @@ func NewRouter(cfg RouterConfig, handler *Handler) http.Handler {
 	mux.HandleFunc("/api/v1/otp/generate", handler.HandleGenerate)
 	mux.HandleFunc("/api/v1/otp/verify", handler.HandleVerify)
 
-	// Health check endpoints
+	// Health and probe endpoints
 	mux.HandleFunc("/health", handler.HandleHealth)
 	mux.HandleFunc("/healthz", handler.HandleHealth)
+	mux.HandleFunc("/livez", handler.HandleLive)
+	mux.HandleFunc("/readyz", handler.HandleReady)
+
+	// Prometheus metrics endpoint
+	mux.Handle("/metrics", promhttp.Handler())
 
 	// Middleware pipeline
 	pipeline := Chain(

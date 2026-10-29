@@ -135,7 +135,7 @@ func main() {
 	}()
 
 	// 6. HTTP Server Setup
-	handler := api.NewHandler(otpSvc)
+	handler := api.NewHandler(otpSvc, store)
 	httpHandler := api.NewRouter(api.RouterConfig{
 		IsMultiTenant: cfg.Mode == "multi_tenant",
 		APIKeys:       map[string]string{},

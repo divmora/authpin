@@ -5,16 +5,19 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/divmora/authpin/internal/metrics"
 	"github.com/divmora/authpin/internal/model"
 	"github.com/divmora/authpin/internal/service"
+	"github.com/divmora/authpin/internal/storage"
 )
 
 type Handler struct {
-	svc *service.OTPService
+	svc   *service.OTPService
+	store storage.StorageEngine
 }
 
-func NewHandler(svc *service.OTPService) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *service.OTPService, store storage.StorageEngine) *Handler {
+	return &Handler{svc: svc, store: store}
 }
 
 func (h *Handler) HandleGenerate(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +99,35 @@ func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"healthy","service":"authpin"}`))
+}
+
+func (h *Handler) HandleReady(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if h.store != nil {
+		if err := h.store.Ping(r.Context()); err != nil {
+			metrics.StoragePingSuccess.Set(0)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":  "not_ready",
+				"storage": "disconnected",
+				"error":   err.Error(),
+			})
+			return
+		}
+	}
+	metrics.StoragePingSuccess.Set(1)
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ready",
+		"storage": "connected",
+		"service": "authpin",
+	})
+}
+
+func (h *Handler) HandleLive(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"alive","service":"authpin"}`))
 }
 
 func writeJSONError(w http.ResponseWriter, message string, statusCode int) {

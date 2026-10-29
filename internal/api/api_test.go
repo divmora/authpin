@@ -32,7 +32,7 @@ func TestAPI_GenerateAndVerifyFlow(t *testing.T) {
 		IssuerName:        "TestAuth",
 	}, store, vault, routerDisp)
 
-	handler := api.NewHandler(svc)
+	handler := api.NewHandler(svc, store)
 	router := api.NewRouter(api.RouterConfig{
 		IsMultiTenant: false,
 	}, handler)
@@ -98,14 +98,42 @@ func TestAPI_GenerateAndVerifyFlow(t *testing.T) {
 }
 
 func TestAPI_HealthCheck(t *testing.T) {
-	handler := api.NewHandler(nil)
+	store := memory.New()
+	handler := api.NewHandler(nil, store)
 	router := api.NewRouter(api.RouterConfig{IsMultiTenant: false}, handler)
 
+	// Health
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	// Livez
+	reqLive := httptest.NewRequest(http.MethodGet, "/livez", nil)
+	wLive := httptest.NewRecorder()
+	router.ServeHTTP(wLive, reqLive)
+	if wLive.Code != http.StatusOK {
+		t.Errorf("expected 200 for livez, got %d", wLive.Code)
+	}
+
+	// Readyz
+	reqReady := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	wReady := httptest.NewRecorder()
+	router.ServeHTTP(wReady, reqReady)
+	if wReady.Code != http.StatusOK {
+		t.Errorf("expected 200 for readyz, got %d", wReady.Code)
+	}
+
+	// Metrics
+	reqMetrics := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	wMetrics := httptest.NewRecorder()
+	router.ServeHTTP(wMetrics, reqMetrics)
+	if wMetrics.Code != http.StatusOK {
+		t.Errorf("expected 200 for metrics, got %d", wMetrics.Code)
+	}
+	if !bytes.Contains(wMetrics.Body.Bytes(), []byte("authpin_")) {
+		t.Errorf("expected metrics output to contain 'authpin_'")
 	}
 }
