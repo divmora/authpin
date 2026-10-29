@@ -1,5 +1,12 @@
 # AuthPin 🔐
 
+[![Latest Release](https://img.shields.io/github/v/release/divmora/authpin?logo=github)](https://github.com/divmora/authpin/releases)
+[![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](https://github.com/divmora/.github/blob/main/LICENSING.md)
+[![CI/CD](https://github.com/divmora/authpin/actions/workflows/ci.yml/badge.svg)](https://github.com/divmora/authpin/actions)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/divmora/authpin)](go.mod)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/divmora/authpin)
+[![Security Policy](https://img.shields.io/badge/Security-Policy-green.svg)](SECURITY.md)
+
 > A standalone, universal, and database-agnostic OTP generation, delivery, and verification service that anyone can use.
 
 AuthPin is built to be consumed by **any application, website, mobile client, or backend service**. It handles the entire OTP lifecycle: cryptographically generating codes, dispatching them directly to users via Email or SMS, storing records encrypted at rest, and validating inputs securely through a blind token verification protocol.
@@ -178,6 +185,45 @@ divmora/github-repos/authpin/
 
 ---
 
+## ⚙️ Configuration & Environment Variables
+
+| Variable | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `PORT` | `int` | `8080` | Port for the HTTP daemon to listen on |
+| `HOST` | `string` | `0.0.0.0` | Host interface binding |
+| `AUTHPIN_MODE` | `string` | `standalone` | Operating mode: `standalone` (zero auth) or `multi_tenant` (`X-API-Key`) |
+| `DATABASE_DRIVER` | `string` | `postgres` | Storage driver: `postgres`, `mysql`, `dynamodb`, or `memory` |
+| `POSTGRES_DSN` | `string` | `""` | PostgreSQL connection string (`DATABASE_URL` also accepted) |
+| `MYSQL_DSN` | `string` | `""` | MySQL DSN (`user:pass@tcp(host:port)/dbname?parseTime=true`) |
+| `DYNAMODB_REGION` | `string` | `us-east-1` | AWS Region for DynamoDB (`AWS_REGION` also accepted) |
+| `DYNAMODB_TABLE` | `string` | `authpin_sessions` | AWS DynamoDB table name |
+| `DYNAMODB_ENDPOINT`| `string` | `""` | Custom endpoint for DynamoDB (e.g. LocalStack) |
+| `MASTER_KEY` | `string` | `(dev-key)` | 32-byte (64 hex characters) key for AES-256-GCM encryption |
+
+---
+
+## 🤝 Community & Contributing
+
+- **[CONTRIBUTING.md](CONTRIBUTING.md)**: Development prerequisites, make targets, and commit conventions.
+- **[SECURITY.md](SECURITY.md)**: Responsible disclosure process and reporting vulnerabilities to `security@divmora.com`.
+- **[Code of Conduct](https://github.com/divmora/.github/blob/main/CODE_OF_CONDUCT.md)**: Community standards and expectations.
+
+---
+
+## 📜 License & Commercial Use
+
+AuthPin is licensed under the **Business Source License 1.1 (BSL 1.1)**:
+- **Free Use**: You may use AuthPin free of charge for non-production purposes, including local development, testing, staging, QA, CI/CD automated validation, educational purposes, and proof-of-concept evaluation.
+- **Commercial Production Use**: Deploying or executing AuthPin in a commercial production environment or offering it as a hosted/managed service requires an active commercial subscription (EULA) from **DIVMORA Technologies**.
+- **Change Date**: Converts to **Apache License, Version 2.0** three (3) years after the release date of each specific version.
+
+For commercial inquiries, licensing, and enterprise support:
+- 🌐 **Website**: [https://divmora.com](https://divmora.com)
+- ✉️ **Licensing**: [licensing@divmora.com](mailto:licensing@divmora.com)
+- 🔒 **Security**: [security@divmora.com](mailto:security@divmora.com)
+
+---
+
 ## 🚀 Roadmap
 
-See [ROADMAP.md](file:///home/ngoyal16/Desktop/divmora/github-repos/authpin/ROADMAP.md) for detailed delivery phases and engineering deliverables.
+See [ROADMAP.md](ROADMAP.md) for detailed delivery phases and engineering deliverables.
