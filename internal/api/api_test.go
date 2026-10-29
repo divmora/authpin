@@ -1,0 +1,111 @@
+package api_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/divmora/authpin/internal/api"
+	"github.com/divmora/authpin/internal/crypto"
+	"github.com/divmora/authpin/internal/dispatcher"
+	"github.com/divmora/authpin/internal/model"
+	"github.com/divmora/authpin/internal/service"
+	"github.com/divmora/authpin/internal/storage/memory"
+)
+
+func TestAPI_GenerateAndVerifyFlow(t *testing.T) {
+	vault, err := crypto.NewVault("test-master-key-32-bytes-long!", "test-jwt-secret")
+	if err != nil {
+		t.Fatalf("failed to init vault: %v", err)
+	}
+
+	store := memory.New()
+	mockEmail := dispatcher.NewMockDispatcher(model.ChannelEmail)
+	routerDisp := dispatcher.NewRouter(mockEmail)
+
+	svc := service.NewOTPService(service.Config{
+		DefaultTTLSeconds: 300,
+		DefaultDigits:     6,
+		DefaultMaxRetries: 3,
+		IssuerName:        "TestAuth",
+	}, store, vault, routerDisp)
+
+	handler := api.NewHandler(svc)
+	router := api.NewRouter(api.RouterConfig{
+		IsMultiTenant: false,
+	}, handler)
+
+	// 1. Call Generate Endpoint
+	genPayload := map[string]interface{}{
+		"target":      "customer@example.com",
+		"channel":     "email",
+		"purpose":     "login",
+		"ttl_seconds": 180,
+	}
+	genBody, _ := json.Marshal(genPayload)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/otp/generate", bytes.NewReader(genBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var genResp model.GenerateResponse
+	if err := json.NewDecoder(w.Body).Decode(&genResp); err != nil {
+		t.Fatalf("failed to decode generate response: %v", err)
+	}
+
+	if genResp.VerificationToken == "" {
+		t.Fatalf("verification_token missing in response")
+	}
+
+	// Retrieve OTP delivered to mock dispatcher
+	lastMsg := mockEmail.LastSent()
+	if lastMsg == nil {
+		t.Fatalf("mock dispatcher did not receive OTP")
+	}
+
+	// 2. Call Verify Endpoint
+	verifyPayload := map[string]interface{}{
+		"verification_token": genResp.VerificationToken,
+		"otp":               lastMsg.OTP,
+		"purpose":           "login",
+	}
+	verifyBody, _ := json.Marshal(verifyPayload)
+
+	reqVerify := httptest.NewRequest(http.MethodPost, "/api/v1/otp/verify", bytes.NewReader(verifyBody))
+	reqVerify.Header.Set("Content-Type", "application/json")
+	wVerify := httptest.NewRecorder()
+	router.ServeHTTP(wVerify, reqVerify)
+
+	if wVerify.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", wVerify.Code, wVerify.Body.String())
+	}
+
+	var verifyResp model.VerifyResponse
+	if err := json.NewDecoder(wVerify.Body).Decode(&verifyResp); err != nil {
+		t.Fatalf("failed to decode verify response: %v", err)
+	}
+
+	if !verifyResp.Success || verifyResp.Status != model.StatusVerified {
+		t.Errorf("expected StatusVerified, got: %s", verifyResp.Status)
+	}
+}
+
+func TestAPI_HealthCheck(t *testing.T) {
+	handler := api.NewHandler(nil)
+	router := api.NewRouter(api.RouterConfig{IsMultiTenant: false}, handler)
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
