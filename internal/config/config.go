@@ -154,6 +154,20 @@ func Load(path string) (*Config, error) {
 	} else if pgDSN := os.Getenv("DATABASE_URL"); pgDSN != "" {
 		cfg.Storage.Postgres.DSN = pgDSN
 	}
+	if mysqlDSN := os.Getenv("MYSQL_DSN"); mysqlDSN != "" {
+		cfg.Storage.MySQL.DSN = mysqlDSN
+	}
+	if dynamoRegion := os.Getenv("AWS_REGION"); dynamoRegion != "" {
+		cfg.Storage.DynamoDB.Region = dynamoRegion
+	} else if dynamoRegion := os.Getenv("DYNAMODB_REGION"); dynamoRegion != "" {
+		cfg.Storage.DynamoDB.Region = dynamoRegion
+	}
+	if dynamoTable := os.Getenv("DYNAMODB_TABLE"); dynamoTable != "" {
+		cfg.Storage.DynamoDB.TableName = dynamoTable
+	}
+	if dynamoEndpoint := os.Getenv("DYNAMODB_ENDPOINT"); dynamoEndpoint != "" {
+		cfg.Storage.DynamoDB.Endpoint = dynamoEndpoint
+	}
 	if key := os.Getenv("MASTER_KEY"); key != "" {
 		cfg.Security.MasterKey = key
 	}

@@ -18,7 +18,9 @@ import (
 	"github.com/divmora/authpin/internal/model"
 	"github.com/divmora/authpin/internal/service"
 	"github.com/divmora/authpin/internal/storage"
+	"github.com/divmora/authpin/internal/storage/dynamodb"
 	"github.com/divmora/authpin/internal/storage/memory"
+	"github.com/divmora/authpin/internal/storage/mysql"
 	"github.com/divmora/authpin/internal/storage/postgres"
 )
 
@@ -67,6 +69,29 @@ func main() {
 			store = pgStore
 			log.Printf("[INIT] Connected to PostgreSQL storage engine.")
 		}
+	case "mysql":
+		if cfg.Storage.MySQL.DSN == "" {
+			log.Printf("[WARN] No MySQL DSN configured. Falling back to in-memory storage engine for local run.")
+			store = memory.New()
+		} else {
+			myStore, err := mysql.New(ctx, cfg.Storage.MySQL.DSN, cfg.Storage.MySQL.MaxConnections)
+			if err != nil {
+				log.Fatalf("failed to connect to MySQL: %v", err)
+			}
+			store = myStore
+			log.Printf("[INIT] Connected to MySQL storage engine.")
+		}
+	case "dynamodb":
+		dynamoStore, err := dynamodb.New(ctx, dynamodb.Config{
+			Region:    cfg.Storage.DynamoDB.Region,
+			TableName: cfg.Storage.DynamoDB.TableName,
+			Endpoint:  cfg.Storage.DynamoDB.Endpoint,
+		})
+		if err != nil {
+			log.Fatalf("failed to connect to AWS DynamoDB: %v", err)
+		}
+		store = dynamoStore
+		log.Printf("[INIT] Connected to AWS DynamoDB storage engine (%s, table: %s).", cfg.Storage.DynamoDB.Region, cfg.Storage.DynamoDB.TableName)
 	default:
 		log.Printf("[INIT] Using in-memory storage engine.")
 		store = memory.New()

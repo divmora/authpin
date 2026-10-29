@@ -99,6 +99,71 @@ paths:
         '429':
           description: Maximum attempts exceeded
 
+  /api/v1/otp/resend:
+    post:
+      summary: Resend OTP
+      description: Generates a fresh OTP code for an active pending session and redispatches it across all configured channels.
+      parameters:
+        - in: header
+          name: X-API-Key
+          schema:
+            type: string
+        - in: header
+          name: X-Project-ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - verification_token
+              properties:
+                verification_token:
+                  type: string
+                  example: "vtok_f47ac10b58cc4372a5670e02b2c3d479"
+      responses:
+        '200':
+          description: OTP successfully redispatched
+        '404':
+          description: Session not found
+        '410':
+          description: Session expired
+
+  /api/v1/otp/revoke:
+    post:
+      summary: Revoke OTP
+      description: Cancels and invalidates an active pending OTP session immediately.
+      parameters:
+        - in: header
+          name: X-API-Key
+          schema:
+            type: string
+        - in: header
+          name: X-Project-ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - verification_token
+              properties:
+                verification_token:
+                  type: string
+                  example: "vtok_f47ac10b58cc4372a5670e02b2c3d479"
+                reason:
+                  type: string
+                  example: "user cancelled login"
+      responses:
+        '200':
+          description: Session revoked successfully
+
   /health:
     get:
       summary: Health check

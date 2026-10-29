@@ -95,6 +95,71 @@ func (h *Handler) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func (h *Handler) HandleResend(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req model.ResendRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	projectID := r.Header.Get("X-Project-ID")
+	if projectID == "" {
+		projectID = "default"
+	}
+
+	resp, err := h.svc.Resend(r.Context(), projectID, &req)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrTokenNotFound):
+			writeJSONError(w, err.Error(), http.StatusNotFound)
+		case errors.Is(err, service.ErrSessionExpired):
+			writeJSONError(w, err.Error(), http.StatusGone)
+		default:
+			writeJSONError(w, err.Error(), http.StatusBadRequest)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (h *Handler) HandleRevoke(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req model.RevokeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	projectID := r.Header.Get("X-Project-ID")
+	if projectID == "" {
+		projectID = "default"
+	}
+
+	if err := h.svc.Revoke(r.Context(), projectID, &req); err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "OTP session revoked successfully",
+	})
+}
+
 func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

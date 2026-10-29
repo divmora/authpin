@@ -68,18 +68,21 @@ AuthPin is built to be consumed by **any application, website, mobile client, or
 
 ## 📋 API Overview
 
-### 1. Generate OTP
+### 1. Generate OTP (Single or Multi-Channel)
 ```http
 POST /api/v1/otp/generate
 Content-Type: application/json
 X-API-Key: authpin_live_9a8b7c6d5e4f3a2b1c0d
 
 {
-  "target": "alice@example.com",
-  "channel": "email",
+  "channels": [
+    { "channel": "email", "target": "alice@example.com" },
+    { "channel": "sms", "target": "+14155552671" }
+  ],
   "purpose": "login",
-  "ttl_seconds": 300,
-  "digits": 6
+  "otp_length": 6,
+  "otp_type": "numeric",
+  "ttl_seconds": 300
 }
 ```
 
@@ -90,8 +93,14 @@ X-API-Key: authpin_live_9a8b7c6d5e4f3a2b1c0d
   "verification_token": "vtok_7d3f8a1c9e2b4f508192a3b4c5d6e7f8",
   "channel": "email",
   "recipient_masked": "a***e@example.com",
+  "deliveries": [
+    { "channel": "email", "recipient_masked": "a***e@example.com", "success": true },
+    { "channel": "sms", "recipient_masked": "+1****71", "success": true }
+  ],
   "expires_at": "2026-10-29T15:40:00Z",
-  "ttl_seconds": 300
+  "ttl_seconds": 300,
+  "otp_length": 6,
+  "otp_type": "numeric"
 }
 ```
 
@@ -112,11 +121,37 @@ X-API-Key: authpin_live_9a8b7c6d5e4f3a2b1c0d
 ```json
 {
   "success": true,
-  "status": "verified",
+  "status": "VERIFIED",
   "verified_at": "2026-10-29T15:36:12Z",
-  "assertion_token": "eyJhbGciOiJFRDI1NTE5IiwidHlwIjoiSldUIn0..."
+  "assertion_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
 ```
+
+### 3. Resend OTP
+```http
+POST /api/v1/otp/resend
+Content-Type: application/json
+
+{
+  "verification_token": "vtok_7d3f8a1c9e2b4f508192a3b4c5d6e7f8"
+}
+```
+
+### 4. Revoke OTP
+```http
+POST /api/v1/otp/revoke
+Content-Type: application/json
+
+{
+  "verification_token": "vtok_7d3f8a1c9e2b4f508192a3b4c5d6e7f8",
+  "reason": "user cancelled"
+}
+```
+
+### 5. Health & Monitoring Probes
+- `GET /health` or `GET /livez`: Liveness check (`200 OK`)
+- `GET /readyz`: Readiness probe testing active database connectivity (`200 OK` or `503 Unavailable`)
+- `GET /metrics`: Standard Prometheus metrics export format
 
 ---
 

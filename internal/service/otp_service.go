@@ -369,3 +369,118 @@ func (s *OTPService) Verify(ctx context.Context, projectID string, req *model.Ve
 		AssertionToken: assertionToken,
 	}, nil
 }
+
+// Resend generates a fresh OTP for an active pending session and redispatches it across all configured channels.
+func (s *OTPService) Resend(ctx context.Context, projectID string, req *model.ResendRequest) (*model.ResendResponse, error) {
+	if req.VerificationToken == "" {
+		return nil, fmt.Errorf("%w: verification_token is required", ErrInvalidInput)
+	}
+
+	tokenHash := crypto.HashToken(req.VerificationToken)
+	session, err := s.storage.GetSessionByTokenHash(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, storage.ErrSessionNotFound) {
+			return nil, ErrTokenNotFound
+		}
+		return nil, fmt.Errorf("storage error: %w", err)
+	}
+
+	if session.Status != model.StatusPending {
+		return nil, fmt.Errorf("cannot resend otp for session in state: %s", session.Status)
+	}
+
+	now := time.Now().UTC()
+	if now.After(session.ExpiresAt) {
+		_ = s.storage.Invalidate(ctx, tokenHash, model.StatusExpired)
+		return nil, ErrSessionExpired
+	}
+
+	// 1. Generate new OTP code for session
+	otpCode, err := crypto.GenerateOTP(session.OTPLength, session.OTPType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate new otp: %w", err)
+	}
+
+	// 2. Update hash
+	session.OTPHash = s.vault.HashOTP(otpCode)
+
+	// 3. Decode targets
+	recipientDecrypted, err := s.vault.DecryptField(session.RecipientEncrypted)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt recipients: %w", err)
+	}
+
+	var targets []model.DeliveryTarget
+	if err := json.Unmarshal(recipientDecrypted, &targets); err != nil || len(targets) == 0 {
+		targets = []model.DeliveryTarget{
+			{Channel: session.Channel, Target: string(recipientDecrypted)},
+		}
+	}
+
+	// 4. Redispatch across all channels in parallel
+	remainingSeconds := int(time.Until(session.ExpiresAt).Seconds())
+	ttlMinutes := (remainingSeconds + 59) / 60
+	deliveries := make([]model.DeliveryResult, len(targets))
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var successCount int
+
+	for i, t := range targets {
+		wg.Add(1)
+		go func(idx int, target model.DeliveryTarget) {
+			defer wg.Done()
+			dispatchReq := &dispatcher.DispatchRequest{
+				Target:     target.Target,
+				Channel:    target.Channel,
+				OTP:        otpCode,
+				Purpose:    session.Purpose,
+				SenderName: s.cfg.IssuerName,
+				TTLMinutes: ttlMinutes,
+			}
+			dispatchErr := s.dispatcher.Dispatch(ctx, dispatchReq)
+
+			mu.Lock()
+			defer mu.Unlock()
+			res := model.DeliveryResult{
+				Channel:         target.Channel,
+				RecipientMasked: crypto.MaskRecipient(target.Target),
+				Success:         dispatchErr == nil,
+			}
+			if dispatchErr != nil {
+				res.Error = dispatchErr.Error()
+			} else {
+				successCount++
+				metrics.RecordGenerated(string(target.Channel), string(session.OTPType))
+			}
+			deliveries[idx] = res
+		}(i, t)
+	}
+	wg.Wait()
+
+	if successCount == 0 {
+		return nil, fmt.Errorf("failed to redispatch otp to any channel")
+	}
+
+	// 5. Save updated session with new OTP hash
+	if err := s.storage.SaveSession(ctx, session); err != nil {
+		return nil, fmt.Errorf("failed to update session: %w", err)
+	}
+
+	return &model.ResendResponse{
+		Success:           true,
+		VerificationToken: req.VerificationToken,
+		Deliveries:        deliveries,
+		ExpiresAt:         session.ExpiresAt,
+		TTLSeconds:        remainingSeconds,
+	}, nil
+}
+
+// Revoke immediately cancels and invalidates a pending OTP session.
+func (s *OTPService) Revoke(ctx context.Context, projectID string, req *model.RevokeRequest) error {
+	if req.VerificationToken == "" {
+		return fmt.Errorf("%w: verification_token is required", ErrInvalidInput)
+	}
+
+	tokenHash := crypto.HashToken(req.VerificationToken)
+	return s.storage.Invalidate(ctx, tokenHash, model.StatusRevoked)
+}

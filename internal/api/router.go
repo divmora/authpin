@@ -19,6 +19,8 @@ func NewRouter(cfg RouterConfig, handler *Handler) http.Handler {
 	// API endpoints
 	mux.HandleFunc("/api/v1/otp/generate", handler.HandleGenerate)
 	mux.HandleFunc("/api/v1/otp/verify", handler.HandleVerify)
+	mux.HandleFunc("/api/v1/otp/resend", handler.HandleResend)
+	mux.HandleFunc("/api/v1/otp/revoke", handler.HandleRevoke)
 
 	// Health and probe endpoints
 	mux.HandleFunc("/health", handler.HandleHealth)

@@ -137,3 +137,61 @@ func TestAPI_HealthCheck(t *testing.T) {
 		t.Errorf("expected metrics output to contain 'authpin_'")
 	}
 }
+
+func TestAPI_ResendAndRevoke(t *testing.T) {
+	vault, _ := crypto.NewVault("test-master-key-32-bytes-long!", "test-jwt-secret")
+	store := memory.New()
+	mockEmail := dispatcher.NewMockDispatcher(model.ChannelEmail)
+	routerDisp := dispatcher.NewRouter(mockEmail)
+
+	svc := service.NewOTPService(service.Config{
+		DefaultTTLSeconds: 300,
+		DefaultDigits:     6,
+		DefaultMaxRetries: 3,
+		IssuerName:        "TestAuth",
+	}, store, vault, routerDisp)
+
+	handler := api.NewHandler(svc, store)
+	router := api.NewRouter(api.RouterConfig{IsMultiTenant: false}, handler)
+
+	// 1. Generate
+	genPayload, _ := json.Marshal(map[string]interface{}{
+		"target":  "resend-api@example.com",
+		"channel": "email",
+		"purpose": "login",
+	})
+	reqGen := httptest.NewRequest(http.MethodPost, "/api/v1/otp/generate", bytes.NewReader(genPayload))
+	reqGen.Header.Set("Content-Type", "application/json")
+	wGen := httptest.NewRecorder()
+	router.ServeHTTP(wGen, reqGen)
+
+	var genResp model.GenerateResponse
+	_ = json.NewDecoder(wGen.Body).Decode(&genResp)
+
+	// 2. Resend
+	resendPayload, _ := json.Marshal(map[string]interface{}{
+		"verification_token": genResp.VerificationToken,
+	})
+	reqResend := httptest.NewRequest(http.MethodPost, "/api/v1/otp/resend", bytes.NewReader(resendPayload))
+	reqResend.Header.Set("Content-Type", "application/json")
+	wResend := httptest.NewRecorder()
+	router.ServeHTTP(wResend, reqResend)
+
+	if wResend.Code != http.StatusOK {
+		t.Fatalf("expected 200 for resend, got %d: %s", wResend.Code, wResend.Body.String())
+	}
+
+	// 3. Revoke
+	revokePayload, _ := json.Marshal(map[string]interface{}{
+		"verification_token": genResp.VerificationToken,
+		"reason":             "user cancelled",
+	})
+	reqRevoke := httptest.NewRequest(http.MethodPost, "/api/v1/otp/revoke", bytes.NewReader(revokePayload))
+	reqRevoke.Header.Set("Content-Type", "application/json")
+	wRevoke := httptest.NewRecorder()
+	router.ServeHTTP(wRevoke, reqRevoke)
+
+	if wRevoke.Code != http.StatusOK {
+		t.Fatalf("expected 200 for revoke, got %d: %s", wRevoke.Code, wRevoke.Body.String())
+	}
+}

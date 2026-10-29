@@ -279,3 +279,80 @@ func TestOTPService_SimultaneousMultiChannel(t *testing.T) {
 		t.Errorf("expected verified status, got: %s", verifyResp.Status)
 	}
 }
+
+func TestOTPService_ResendAndRevoke(t *testing.T) {
+	svc, mockEmail := setupTestService(t)
+	ctx := context.Background()
+
+	// 1. Generate initial OTP
+	genResp, err := svc.Generate(ctx, "proj-1", &model.GenerateRequest{
+		Target:    "resend@example.com",
+		Channel:   model.ChannelEmail,
+		Purpose:   "login",
+		OTPLength: 6,
+	})
+	if err != nil {
+		t.Fatalf("generate failed: %v", err)
+	}
+
+	initialOTP := mockEmail.LastSent().OTP
+
+	// 2. Resend OTP
+	resendResp, err := svc.Resend(ctx, "proj-1", &model.ResendRequest{
+		VerificationToken: genResp.VerificationToken,
+	})
+	if err != nil {
+		t.Fatalf("resend failed: %v", err)
+	}
+	if !resendResp.Success {
+		t.Errorf("expected resend success")
+	}
+
+	newOTP := mockEmail.LastSent().OTP
+	if newOTP == "" {
+		t.Fatalf("expected new OTP to be delivered")
+	}
+	if newOTP == initialOTP {
+		t.Errorf("expected new OTP to be different from initial OTP")
+	}
+
+	// 3. Old OTP should fail, new OTP should succeed
+	verifyResp, err := svc.Verify(ctx, "proj-1", &model.VerifyRequest{
+		VerificationToken: genResp.VerificationToken,
+		OTP:               newOTP,
+		Purpose:           "login",
+	})
+	if err != nil {
+		t.Fatalf("verify with resent OTP failed: %v", err)
+	}
+	if !verifyResp.Success {
+		t.Errorf("expected verify success with new OTP")
+	}
+
+	// 4. Test Revoke
+	genResp2, err := svc.Generate(ctx, "proj-1", &model.GenerateRequest{
+		Target:  "revoke@example.com",
+		Channel: model.ChannelEmail,
+		Purpose: "payment",
+	})
+	if err != nil {
+		t.Fatalf("generate 2 failed: %v", err)
+	}
+
+	err = svc.Revoke(ctx, "proj-1", &model.RevokeRequest{
+		VerificationToken: genResp2.VerificationToken,
+		Reason:            "user cancelled transaction",
+	})
+	if err != nil {
+		t.Fatalf("revoke failed: %v", err)
+	}
+
+	// Verify should now be rejected as revoked
+	_, err = svc.Verify(ctx, "proj-1", &model.VerifyRequest{
+		VerificationToken: genResp2.VerificationToken,
+		OTP:               mockEmail.LastSent().OTP,
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid state") {
+		t.Errorf("expected rejection for revoked session, got: %v", err)
+	}
+}

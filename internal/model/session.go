@@ -111,3 +111,23 @@ type VerifyResponse struct {
 	VerifiedAt      *time.Time `json:"verified_at,omitempty"`
 	AssertionToken  string     `json:"assertion_token,omitempty"` // Signed JWT verification proof
 }
+
+// ResendRequest is submitted to redispatch an active OTP session.
+type ResendRequest struct {
+	VerificationToken string `json:"verification_token"`
+}
+
+// ResendResponse confirms redispatch across configured channels.
+type ResendResponse struct {
+	Success           bool             `json:"success"`
+	VerificationToken string           `json:"verification_token"`
+	Deliveries        []DeliveryResult `json:"deliveries"`
+	ExpiresAt         time.Time        `json:"expires_at"`
+	TTLSeconds        int              `json:"ttl_seconds"`
+}
+
+// RevokeRequest is submitted to cancel and invalidate an active session early.
+type RevokeRequest struct {
+	VerificationToken string `json:"verification_token"`
+	Reason            string `json:"reason,omitempty"`
+}
