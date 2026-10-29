@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/divmora/authpin/internal/crypto"
+	"github.com/divmora/authpin/internal/model"
 )
 
 func TestVault_EncryptionAndDecryption(t *testing.T) {
@@ -86,5 +87,47 @@ func TestVault_AttestationToken(t *testing.T) {
 	}
 	if token == "" {
 		t.Errorf("empty token")
+	}
+}
+
+func TestGenerateOTP_NumericAndAlphanumeric(t *testing.T) {
+	// 1. Numeric with custom length 8
+	numOTP, err := crypto.GenerateOTP(8, model.OTPTypeNumeric)
+	if err != nil {
+		t.Fatalf("failed to generate numeric otp: %v", err)
+	}
+	if len(numOTP) != 8 {
+		t.Errorf("expected length 8, got %d", len(numOTP))
+	}
+	for _, c := range numOTP {
+		if c < '0' || c > '9' {
+			t.Errorf("expected numeric digit, got: %c", c)
+		}
+	}
+
+	// 2. Alphanumeric with custom length 10
+	alphaOTP, err := crypto.GenerateOTP(10, model.OTPTypeAlphanumeric)
+	if err != nil {
+		t.Fatalf("failed to generate alphanumeric otp: %v", err)
+	}
+	if len(alphaOTP) != 10 {
+		t.Errorf("expected length 10, got %d", len(alphaOTP))
+	}
+
+	// 3. Case-insensitive OTP verification
+	vault, _ := crypto.NewVault("test-key", "test-secret")
+	hash := vault.HashOTP("A7B9K2")
+
+	// Lowercase input should match
+	if !vault.VerifyOTPHash(hash, "a7b9k2") {
+		t.Errorf("expected lowercase 'a7b9k2' to match hash of 'A7B9K2'")
+	}
+	// Uppercase input should match
+	if !vault.VerifyOTPHash(hash, "A7B9K2") {
+		t.Errorf("expected uppercase 'A7B9K2' to match hash of 'A7B9K2'")
+	}
+	// Mismatched character fails
+	if vault.VerifyOTPHash(hash, "a7b9k3") {
+		t.Errorf("expected mismatch to fail")
 	}
 }

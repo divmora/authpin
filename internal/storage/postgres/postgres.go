@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS otp_sessions (
     recipient_encrypted BYTEA NOT NULL,
     recipient_lookup_hash VARCHAR(64) NOT NULL,
     channel VARCHAR(16) NOT NULL,
+    otp_type VARCHAR(16) NOT NULL DEFAULT 'numeric',
     purpose VARCHAR(64) NOT NULL,
     attempts INT NOT NULL DEFAULT 0,
     max_attempts INT NOT NULL DEFAULT 3,
@@ -36,6 +37,8 @@ CREATE TABLE IF NOT EXISTS otp_sessions (
     expires_at TIMESTAMPTZ NOT NULL,
     verified_at TIMESTAMPTZ
 );
+
+ALTER TABLE otp_sessions ADD COLUMN IF NOT EXISTS otp_type VARCHAR(16) NOT NULL DEFAULT 'numeric';
 
 CREATE INDEX IF NOT EXISTS idx_otp_sessions_token_hash ON otp_sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_otp_sessions_recipient ON otp_sessions(project_id, recipient_lookup_hash, created_at DESC);
@@ -74,10 +77,10 @@ func (e *Engine) SaveSession(ctx context.Context, session *model.OTPSession) err
 	query := `
 		INSERT INTO otp_sessions (
 			id, project_id, token_hash, otp_hash, recipient_encrypted,
-			recipient_lookup_hash, channel, purpose, attempts, max_attempts,
+			recipient_lookup_hash, channel, otp_type, purpose, attempts, max_attempts,
 			status, metadata_encrypted, created_at, expires_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
 		)
 	`
 	_, err := e.pool.Exec(ctx, query,
@@ -88,6 +91,7 @@ func (e *Engine) SaveSession(ctx context.Context, session *model.OTPSession) err
 		session.RecipientEncrypted,
 		session.RecipientLookupHash,
 		string(session.Channel),
+		string(session.OTPType),
 		session.Purpose,
 		session.Attempts,
 		session.MaxAttempts,
@@ -105,13 +109,14 @@ func (e *Engine) SaveSession(ctx context.Context, session *model.OTPSession) err
 func (e *Engine) GetSessionByTokenHash(ctx context.Context, tokenHash string) (*model.OTPSession, error) {
 	query := `
 		SELECT id, project_id, token_hash, otp_hash, recipient_encrypted,
-		       recipient_lookup_hash, channel, purpose, attempts, max_attempts,
+		       recipient_lookup_hash, channel, otp_type, purpose, attempts, max_attempts,
 		       status, metadata_encrypted, created_at, expires_at, verified_at
 		FROM otp_sessions
 		WHERE token_hash = $1
 	`
 	var sess model.OTPSession
 	var channelStr string
+	var otpTypeStr string
 	var statusStr string
 
 	err := e.pool.QueryRow(ctx, query, tokenHash).Scan(
@@ -122,6 +127,7 @@ func (e *Engine) GetSessionByTokenHash(ctx context.Context, tokenHash string) (*
 		&sess.RecipientEncrypted,
 		&sess.RecipientLookupHash,
 		&channelStr,
+		&otpTypeStr,
 		&sess.Purpose,
 		&sess.Attempts,
 		&sess.MaxAttempts,
@@ -139,6 +145,7 @@ func (e *Engine) GetSessionByTokenHash(ctx context.Context, tokenHash string) (*
 	}
 
 	sess.Channel = model.Channel(channelStr)
+	sess.OTPType = model.OTPType(otpTypeStr)
 	sess.Status = model.Status(statusStr)
 	return &sess, nil
 }

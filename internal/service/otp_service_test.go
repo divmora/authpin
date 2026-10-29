@@ -36,13 +36,14 @@ func TestOTPService_GenerateAndVerify_Success(t *testing.T) {
 	svc, mockEmail := setupTestService(t)
 	ctx := context.Background()
 
-	// 1. Generate
+	// 1. Generate standard numeric OTP
 	genResp, err := svc.Generate(ctx, "proj-1", &model.GenerateRequest{
 		Target:      "test@example.com",
 		Channel:     model.ChannelEmail,
 		Purpose:     "login",
 		TTLSeconds:  120,
-		Digits:      6,
+		OTPLength:   6,
+		OTPType:     model.OTPTypeNumeric,
 		MaxAttempts: 3,
 	})
 	if err != nil {
@@ -90,6 +91,50 @@ func TestOTPService_GenerateAndVerify_Success(t *testing.T) {
 	})
 	if err != service.ErrAlreadyVerified {
 		t.Errorf("expected ErrAlreadyVerified on replay, got: %v", err)
+	}
+}
+
+func TestOTPService_AlphanumericAndCustomLength(t *testing.T) {
+	svc, mockEmail := setupTestService(t)
+	ctx := context.Background()
+
+	// Request custom 8-character alphanumeric OTP
+	genResp, err := svc.Generate(ctx, "proj-alpha", &model.GenerateRequest{
+		Target:      "alpha@example.com",
+		Channel:     model.ChannelEmail,
+		Purpose:     "document_sign",
+		OTPLength:   8,
+		OTPType:     model.OTPTypeAlphanumeric,
+		TTLSeconds:  600,
+		MaxAttempts: 3,
+	})
+	if err != nil {
+		t.Fatalf("generate failed: %v", err)
+	}
+
+	lastMsg := mockEmail.LastSent()
+	if lastMsg == nil {
+		t.Fatalf("expected dispatched message")
+	}
+
+	code := lastMsg.OTP
+	if len(code) != 8 {
+		t.Errorf("expected 8-char OTP, got %s (len: %d)", code, len(code))
+	}
+
+	// Verify using lowercase representation of alphanumeric code (case-insensitivity test)
+	lowerCode := strings.ToLower(code)
+	verifyResp, err := svc.Verify(ctx, "proj-alpha", &model.VerifyRequest{
+		VerificationToken: genResp.VerificationToken,
+		OTP:               lowerCode,
+		Purpose:           "document_sign",
+	})
+	if err != nil {
+		t.Fatalf("verification failed with lowercase alphanumeric: %v", err)
+	}
+
+	if !verifyResp.Success || verifyResp.Status != model.StatusVerified {
+		t.Errorf("expected verified status, got %v (%s)", verifyResp.Success, verifyResp.Status)
 	}
 }
 
@@ -161,6 +206,5 @@ func TestOTPService_ExpiredOTP(t *testing.T) {
 		t.Errorf("expected ErrTokenNotFound, got: %v", err)
 	}
 
-	// Fast forward time check by validating behavior
 	_ = genResp
 }

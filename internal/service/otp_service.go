@@ -87,16 +87,25 @@ func (s *OTPService) Generate(ctx context.Context, projectID string, req *model.
 		ttlSeconds = 3600
 	}
 
-	// Digits normalization
-	digits := req.Digits
-	if digits <= 0 {
-		digits = s.cfg.DefaultDigits
+	// Dynamic OTP Length normalization (supports both otp_length and digits alias)
+	otpLength := req.OTPLength
+	if otpLength <= 0 {
+		otpLength = req.Digits
 	}
-	if digits < 4 {
-		digits = 4
+	if otpLength <= 0 {
+		otpLength = s.cfg.DefaultDigits
 	}
-	if digits > 10 {
-		digits = 10
+	if otpLength < 4 {
+		otpLength = 4
+	}
+	if otpLength > 32 {
+		otpLength = 32
+	}
+
+	// OTP Type normalization: numeric | alphanumeric
+	otpType := req.OTPType
+	if otpType != model.OTPTypeAlphanumeric {
+		otpType = model.OTPTypeNumeric
 	}
 
 	// Max retries normalization
@@ -106,7 +115,7 @@ func (s *OTPService) Generate(ctx context.Context, projectID string, req *model.
 	}
 
 	// 1. Generate random OTP and opaque public verification token
-	otpCode, err := crypto.GenerateRandomOTP(digits)
+	otpCode, err := crypto.GenerateOTP(otpLength, otpType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate random otp: %w", err)
 	}
@@ -147,6 +156,7 @@ func (s *OTPService) Generate(ctx context.Context, projectID string, req *model.
 		RecipientEncrypted:  recipientEncrypted,
 		RecipientLookupHash: recipientLookupHash,
 		Channel:             req.Channel,
+		OTPType:             otpType,
 		Purpose:             req.Purpose,
 		Attempts:            0,
 		MaxAttempts:         maxAttempts,

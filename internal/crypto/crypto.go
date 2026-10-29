@@ -15,6 +15,8 @@ import (
 	"math/big"
 	"strings"
 	"time"
+
+	"github.com/divmora/authpin/internal/model"
 )
 
 var (
@@ -100,9 +102,11 @@ func (v *Vault) DecryptField(ciphertext []byte) ([]byte, error) {
 }
 
 // HashOTP creates a keyed cryptographic hash of the raw OTP using HMAC-SHA256 with vault salt.
+// It normalizes input to uppercase and trims whitespace for seamless alphanumeric comparisons.
 func (v *Vault) HashOTP(otp string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(otp))
 	mac := hmac.New(sha256.New, v.hashSalt)
-	mac.Write([]byte(otp))
+	mac.Write([]byte(normalized))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
@@ -125,25 +129,42 @@ func (v *Vault) BlindIndex(identifier string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// GenerateOTP generates a cryptographically secure OTP of given length and character type (numeric or alphanumeric).
+func GenerateOTP(length int, otpType model.OTPType) (string, error) {
+	if length < 4 {
+		length = 4
+	}
+	if length > 32 {
+		length = 32
+	}
+
+	var charset string
+	if otpType == model.OTPTypeAlphanumeric {
+		// Uppercase letters + digits without visually ambiguous characters (optional: standard 0-9, A-Z)
+		charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	} else {
+		// Default: Numeric (0-9)
+		charset = "0123456789"
+	}
+
+	result := make([]byte, length)
+	charsetLen := big.NewInt(int64(len(charset)))
+
+	for i := 0; i < length; i++ {
+		n, err := rand.Int(rand.Reader, charsetLen)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate random character: %w", err)
+		}
+		result[i] = charset[n.Int64()]
+	}
+
+	return string(result), nil
+}
+
 // GenerateRandomOTP generates a cryptographically secure numeric OTP string of given length.
+// Deprecated: Use GenerateOTP(digits, model.OTPTypeNumeric) instead.
 func GenerateRandomOTP(digits int) (string, error) {
-	if digits < 4 {
-		digits = 4
-	}
-	if digits > 10 {
-		digits = 10
-	}
-
-	// Maximum value: 10^digits
-	max := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(digits)), nil)
-	n, err := rand.Int(rand.Reader, max)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate random number: %w", err)
-	}
-
-	// Format with leading zeros
-	format := fmt.Sprintf("%%0%dd", digits)
-	return fmt.Sprintf(format, n.Int64()), nil
+	return GenerateOTP(digits, model.OTPTypeNumeric)
 }
 
 // GenerateVerificationToken generates an unguessable 32-byte random tracking token.

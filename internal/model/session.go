@@ -12,6 +12,14 @@ const (
 	ChannelSMS   Channel = "sms"
 )
 
+// OTPType defines the character set structure for generated OTPs.
+type OTPType string
+
+const (
+	OTPTypeNumeric      OTPType = "numeric"
+	OTPTypeAlphanumeric OTPType = "alphanumeric"
+)
+
 // Status represents the lifecycle status of an OTP session.
 type Status string
 
@@ -32,6 +40,7 @@ type OTPSession struct {
 	RecipientEncrypted  []byte            `json:"recipient_encrypted"`   // AES-256-GCM encrypted recipient (email or phone)
 	RecipientLookupHash string            `json:"recipient_lookup_hash"` // Blind HMAC-SHA256 index for rate-limiting
 	Channel             Channel           `json:"channel"`
+	OTPType             OTPType           `json:"otp_type"`              // numeric or alphanumeric
 	Purpose             string            `json:"purpose"`
 	Attempts            int               `json:"attempts"`
 	MaxAttempts         int               `json:"max_attempts"`
@@ -48,7 +57,9 @@ type GenerateRequest struct {
 	Target      string            `json:"target"`                 // Email or phone number
 	Channel     Channel           `json:"channel"`                // "email" or "sms"
 	Purpose     string            `json:"purpose"`                // e.g. "login", "password_reset", "transaction"
-	Digits      int               `json:"digits,omitempty"`       // OTP length (default: 6, min: 4, max: 10)
+	Digits      int               `json:"digits,omitempty"`       // Deprecated: use OTPLength
+	OTPLength   int               `json:"otp_length,omitempty"`  // Custom OTP length (min: 4, max: 32, default: 6)
+	OTPType     OTPType           `json:"otp_type,omitempty"`    // "numeric" | "alphanumeric" (default: "numeric")
 	TTLSeconds  int               `json:"ttl_seconds,omitempty"`  // Dynamic expiry in seconds (default: 300)
 	MaxAttempts int               `json:"max_attempts,omitempty"` // Max allowed retries (default: 3)
 	Metadata    map[string]string `json:"metadata,omitempty"`     // Audit metadata (IP, user agent, tenant ID)
