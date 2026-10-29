@@ -133,7 +133,9 @@ func (s *SMTPDispatcher) Dispatch(ctx context.Context, req *DispatchRequest) err
 	if err != nil {
 		return fmt.Errorf("smtp client error: %w", err)
 	}
-	defer client.Quit()
+	defer func() {
+		_ = client.Quit()
+	}()
 
 	if s.cfg.Username != "" {
 		if err := client.Auth(auth); err != nil {
@@ -152,7 +154,9 @@ func (s *SMTPDispatcher) Dispatch(ctx context.Context, req *DispatchRequest) err
 	if err != nil {
 		return fmt.Errorf("smtp DATA failed: %w", err)
 	}
-	defer w.Close()
+	defer func() {
+		_ = w.Close()
+	}()
 
 	if _, err := w.Write([]byte(body)); err != nil {
 		return fmt.Errorf("smtp body write failed: %w", err)
@@ -206,7 +210,9 @@ func (t *TwilioDispatcher) Dispatch(ctx context.Context, req *DispatchRequest) e
 	if err != nil {
 		return fmt.Errorf("twilio dispatch error: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("twilio responded with status: %d", resp.StatusCode)

@@ -158,7 +158,9 @@ func (e *Engine) IncrementAttempts(ctx context.Context, tokenHash string) (int, 
 	if err != nil {
 		return 0, fmt.Errorf("failed to start tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	updateQuery := `UPDATE otp_sessions SET attempts = attempts + 1 WHERE token_hash = ?`
 	res, err := tx.ExecContext(ctx, updateQuery, tokenHash)

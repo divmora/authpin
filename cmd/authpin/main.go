@@ -96,7 +96,9 @@ func main() {
 		log.Printf("[INIT] Using in-memory storage engine.")
 		store = memory.New()
 	}
-	defer store.Close()
+	defer func() {
+		_ = store.Close()
+	}()
 
 	// 3. Initialize Dispatchers
 	var emailDisp dispatcher.Dispatcher
