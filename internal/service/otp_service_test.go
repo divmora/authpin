@@ -208,3 +208,74 @@ func TestOTPService_ExpiredOTP(t *testing.T) {
 
 	_ = genResp
 }
+
+func TestOTPService_SimultaneousMultiChannel(t *testing.T) {
+	vault, err := crypto.NewVault("test-master-key-32-bytes-long!", "jwt-secret-key-12345")
+	if err != nil {
+		t.Fatalf("failed to init vault: %v", err)
+	}
+
+	store := memory.New()
+	mockEmail := dispatcher.NewMockDispatcher(model.ChannelEmail)
+	mockSMS := dispatcher.NewMockDispatcher(model.ChannelSMS)
+	router := dispatcher.NewRouter(mockEmail, mockSMS)
+
+	svc := service.NewOTPService(service.Config{
+		DefaultTTLSeconds: 300,
+		DefaultDigits:     6,
+		DefaultMaxRetries: 3,
+		IssuerName:        "TestAuth",
+	}, store, vault, router)
+
+	ctx := context.Background()
+
+	// 1. Generate OTP across multiple channels simultaneously (Email + SMS)
+	genResp, err := svc.Generate(ctx, "proj-multi", &model.GenerateRequest{
+		Channels: []model.DeliveryTarget{
+			{Channel: model.ChannelEmail, Target: "user@example.com"},
+			{Channel: model.ChannelSMS, Target: "+14155552671"},
+		},
+		Purpose:   "login_2fa",
+		OTPLength: 6,
+	})
+	if err != nil {
+		t.Fatalf("simultaneous multi-channel generation failed: %v", err)
+	}
+
+	if len(genResp.Deliveries) != 2 {
+		t.Fatalf("expected 2 delivery statuses, got %d", len(genResp.Deliveries))
+	}
+
+	// Verify both channels report success
+	for _, del := range genResp.Deliveries {
+		if !del.Success {
+			t.Errorf("delivery to %s failed: %s", del.Channel, del.Error)
+		}
+	}
+
+	// 2. Verify that both dispatchers received the EXACT same OTP code
+	lastEmail := mockEmail.LastSent()
+	lastSMS := mockSMS.LastSent()
+
+	if lastEmail == nil || lastSMS == nil {
+		t.Fatalf("expected both email and sms to be sent")
+	}
+
+	if lastEmail.OTP != lastSMS.OTP {
+		t.Errorf("OTP mismatch between channels: email had %s, sms had %s", lastEmail.OTP, lastSMS.OTP)
+	}
+
+	// 3. Verify downstream using the code received on SMS
+	verifyResp, err := svc.Verify(ctx, "proj-multi", &model.VerifyRequest{
+		VerificationToken: genResp.VerificationToken,
+		OTP:               lastSMS.OTP,
+		Purpose:           "login_2fa",
+	})
+	if err != nil {
+		t.Fatalf("verification failed: %v", err)
+	}
+
+	if !verifyResp.Success || verifyResp.Status != model.StatusVerified {
+		t.Errorf("expected verified status, got: %s", verifyResp.Status)
+	}
+}

@@ -31,6 +31,20 @@ const (
 	StatusRevoked   Status = "REVOKED"
 )
 
+// DeliveryTarget defines a destination target and delivery channel.
+type DeliveryTarget struct {
+	Channel Channel `json:"channel"`
+	Target  string  `json:"target"`
+}
+
+// DeliveryResult captures the dispatch result and masked recipient for each channel.
+type DeliveryResult struct {
+	Channel         Channel `json:"channel"`
+	RecipientMasked string  `json:"recipient_masked"`
+	Success         bool    `json:"success"`
+	Error           string  `json:"error,omitempty"`
+}
+
 // OTPSession represents the persisted OTP session record.
 type OTPSession struct {
 	ID                  string            `json:"id"`
@@ -55,8 +69,9 @@ type OTPSession struct {
 
 // GenerateRequest defines the payload for creating and delivering a new OTP.
 type GenerateRequest struct {
-	Target      string            `json:"target"`                 // Email or phone number
-	Channel     Channel           `json:"channel"`                // "email" or "sms"
+	Target      string            `json:"target,omitempty"`      // Single target (email or phone)
+	Channel     Channel           `json:"channel,omitempty"`     // Single channel ("email" or "sms")
+	Channels    []DeliveryTarget  `json:"channels,omitempty"`    // Multiple channels for simultaneous multi-channel dispatch
 	Purpose     string            `json:"purpose"`                // e.g. "login", "password_reset", "transaction"
 	Digits      int               `json:"digits,omitempty"`       // Deprecated: use OTPLength
 	OTPLength   int               `json:"otp_length,omitempty"`  // Custom OTP length (min: 4, max: 32, default: 6)
@@ -68,14 +83,15 @@ type GenerateRequest struct {
 
 // GenerateResponse is returned to downstream systems upon successful generation and dispatch.
 type GenerateResponse struct {
-	Success           bool      `json:"success"`
-	VerificationToken string    `json:"verification_token"` // Tracking hash passed downstream
-	Channel           Channel   `json:"channel"`
-	RecipientMasked   string    `json:"recipient_masked"`
-	ExpiresAt         time.Time `json:"expires_at"`
-	TTLSeconds        int       `json:"ttl_seconds"`
-	OTPLength         int       `json:"otp_length"` // Configured length of the OTP (4 - 32)
-	OTPType           OTPType   `json:"otp_type"`   // "numeric" or "alphanumeric"
+	Success           bool             `json:"success"`
+	VerificationToken string           `json:"verification_token"` // Tracking hash passed downstream
+	Deliveries        []DeliveryResult `json:"deliveries"`          // Status of each simultaneous delivery channel
+	Channel           Channel          `json:"channel,omitempty"`   // Primary channel (backward-compat)
+	RecipientMasked   string           `json:"recipient_masked"`   // Primary or combined masked recipients
+	ExpiresAt         time.Time        `json:"expires_at"`
+	TTLSeconds        int              `json:"ttl_seconds"`
+	OTPLength         int              `json:"otp_length"` // Configured length of the OTP (4 - 32)
+	OTPType           OTPType          `json:"otp_type"`   // "numeric" or "alphanumeric"
 }
 
 // VerifyRequest is submitted by downstream systems to validate user-supplied OTP.

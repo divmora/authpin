@@ -165,18 +165,35 @@ components:
   schemas:
     GenerateRequest:
       type: object
-      required:
-        - target
-        - channel
       properties:
         target:
           type: string
-          description: Recipient email address or E.164 phone number
+          description: Recipient email address or E.164 phone number (single channel)
           example: "alice@example.com"
         channel:
           type: string
           enum: [email, sms]
           example: "email"
+        channels:
+          type: array
+          description: Deliver to multiple channels simultaneously (Email + SMS)
+          items:
+            type: object
+            required:
+              - channel
+              - target
+            properties:
+              channel:
+                type: string
+                enum: [email, sms]
+              target:
+                type: string
+                description: Destination email or phone number
+          example:
+            - channel: "email"
+              target: "alice@example.com"
+            - channel: "sms"
+              target: "+14155552671"
         purpose:
           type: string
           description: Logical purpose for this OTP
@@ -224,6 +241,24 @@ components:
           type: string
           description: Public opaque tracking token returned to caller
           example: "vtok_f47ac10b58cc4372a5670e02b2c3d479"
+        deliveries:
+          type: array
+          description: Status of each simultaneous delivery channel
+          items:
+            type: object
+            properties:
+              channel:
+                type: string
+                example: "email"
+              recipient_masked:
+                type: string
+                example: "a***e@example.com"
+              success:
+                type: boolean
+                example: true
+              error:
+                type: string
+                example: ""
         channel:
           type: string
           example: "email"

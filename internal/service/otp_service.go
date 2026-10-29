@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,14 +63,28 @@ func NewOTPService(cfg Config, store storage.StorageEngine, vault *crypto.Vault,
 	}
 }
 
-// Generate creates a cryptographically secure OTP, persists it encrypted, and delivers it to the target.
+// Generate creates a cryptographically secure OTP, persists it encrypted, and delivers it to one or multiple channels simultaneously.
 func (s *OTPService) Generate(ctx context.Context, projectID string, req *model.GenerateRequest) (*model.GenerateResponse, error) {
-	if req.Target == "" {
-		return nil, fmt.Errorf("%w: target is required", ErrInvalidInput)
+	// 1. Normalize and validate delivery targets
+	targets := req.Channels
+	if len(targets) == 0 && req.Target != "" && req.Channel != "" {
+		targets = []model.DeliveryTarget{
+			{Channel: req.Channel, Target: req.Target},
+		}
 	}
-	if req.Channel != model.ChannelEmail && req.Channel != model.ChannelSMS {
-		return nil, fmt.Errorf("%w: channel must be email or sms", ErrInvalidInput)
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("%w: at least one delivery target is required (via 'channels' array or 'target' & 'channel')", ErrInvalidInput)
 	}
+
+	for _, t := range targets {
+		if t.Target == "" {
+			return nil, fmt.Errorf("%w: target address cannot be empty", ErrInvalidInput)
+		}
+		if t.Channel != model.ChannelEmail && t.Channel != model.ChannelSMS {
+			return nil, fmt.Errorf("%w: unsupported channel '%s', must be 'email' or 'sms'", ErrInvalidInput, t.Channel)
+		}
+	}
+
 	if req.Purpose == "" {
 		req.Purpose = "verification"
 	}
@@ -116,7 +131,7 @@ func (s *OTPService) Generate(ctx context.Context, projectID string, req *model.
 		maxAttempts = s.cfg.DefaultMaxRetries
 	}
 
-	// 1. Generate random OTP and opaque public verification token
+	// 2. Generate random OTP and opaque public verification token
 	otpCode, err := crypto.GenerateOTP(otpLength, otpType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate random otp: %w", err)
@@ -127,16 +142,23 @@ func (s *OTPService) Generate(ctx context.Context, projectID string, req *model.
 		return nil, fmt.Errorf("failed to generate tracking token: %w", err)
 	}
 
-	// 2. Hash & Encrypt
+	// 3. Hash & Encrypt
 	tokenHash := crypto.HashToken(rawToken)
 	otpHash := s.vault.HashOTP(otpCode)
 
-	recipientEncrypted, err := s.vault.EncryptField([]byte(req.Target))
+	// Encrypt all delivery targets together as JSON
+	targetsJSON, err := json.Marshal(targets)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encrypt recipient: %w", err)
+		return nil, fmt.Errorf("failed to encode targets: %w", err)
+	}
+	recipientEncrypted, err := s.vault.EncryptField(targetsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt recipients: %w", err)
 	}
 
-	recipientLookupHash := s.vault.BlindIndex(req.Target)
+	primaryTarget := targets[0].Target
+	primaryChannel := targets[0].Channel
+	recipientLookupHash := s.vault.BlindIndex(primaryTarget)
 
 	var metadataEncrypted []byte
 	if len(req.Metadata) > 0 {
@@ -150,6 +172,11 @@ func (s *OTPService) Generate(ctx context.Context, projectID string, req *model.
 	now := time.Now().UTC()
 	expiresAt := now.Add(time.Duration(ttlSeconds) * time.Second)
 
+	sessionChannel := primaryChannel
+	if len(targets) > 1 {
+		sessionChannel = model.Channel("multi")
+	}
+
 	session := &model.OTPSession{
 		ID:                  uuid.NewString(),
 		ProjectID:           projectID,
@@ -157,7 +184,7 @@ func (s *OTPService) Generate(ctx context.Context, projectID string, req *model.
 		OTPHash:             otpHash,
 		RecipientEncrypted:  recipientEncrypted,
 		RecipientLookupHash: recipientLookupHash,
-		Channel:             req.Channel,
+		Channel:             sessionChannel,
 		OTPType:             otpType,
 		OTPLength:           otpLength,
 		Purpose:             req.Purpose,
@@ -169,37 +196,64 @@ func (s *OTPService) Generate(ctx context.Context, projectID string, req *model.
 		ExpiresAt:           expiresAt,
 	}
 
-	// 3. Persist session to pluggable storage engine
+	// 4. Persist session to pluggable storage engine
 	if err := s.storage.SaveSession(ctx, session); err != nil {
 		return nil, fmt.Errorf("failed to persist otp session: %w", err)
 	}
 
-	// 4. Dispatch OTP directly via selected channel
+	// 5. Dispatch OTP to ALL targets simultaneously
 	ttlMinutes := (ttlSeconds + 59) / 60
-	dispatchReq := &dispatcher.DispatchRequest{
-		Target:     req.Target,
-		Channel:    req.Channel,
-		OTP:        otpCode,
-		Purpose:    req.Purpose,
-		SenderName: s.cfg.IssuerName,
-		TTLMinutes: ttlMinutes,
-		Metadata:   req.Metadata,
-	}
+	deliveries := make([]model.DeliveryResult, len(targets))
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var successCount int
 
-	if err := s.dispatcher.Dispatch(ctx, dispatchReq); err != nil {
-		// Log delivery error; mark session revoked to prevent dangling unreachable OTPs
+	for i, t := range targets {
+		wg.Add(1)
+		go func(idx int, target model.DeliveryTarget) {
+			defer wg.Done()
+			dispatchReq := &dispatcher.DispatchRequest{
+				Target:     target.Target,
+				Channel:    target.Channel,
+				OTP:        otpCode,
+				Purpose:    req.Purpose,
+				SenderName: s.cfg.IssuerName,
+				TTLMinutes: ttlMinutes,
+				Metadata:   req.Metadata,
+			}
+			dispatchErr := s.dispatcher.Dispatch(ctx, dispatchReq)
+
+			mu.Lock()
+			defer mu.Unlock()
+			res := model.DeliveryResult{
+				Channel:         target.Channel,
+				RecipientMasked: crypto.MaskRecipient(target.Target),
+				Success:         dispatchErr == nil,
+			}
+			if dispatchErr != nil {
+				res.Error = dispatchErr.Error()
+			} else {
+				successCount++
+				metrics.RecordGenerated(string(target.Channel), string(session.OTPType))
+			}
+			deliveries[idx] = res
+		}(i, t)
+	}
+	wg.Wait()
+
+	if successCount == 0 {
+		// All deliveries failed; revoke session
 		_ = s.storage.Invalidate(ctx, tokenHash, model.StatusRevoked)
-		return nil, fmt.Errorf("failed to dispatch otp to recipient: %w", err)
+		return nil, fmt.Errorf("failed to dispatch otp to any channel")
 	}
 
-	metrics.RecordGenerated(string(req.Channel), string(session.OTPType))
-
-	// 5. Return blind response (raw OTP is NEVER returned)
+	// 6. Return blind response (raw OTP is NEVER returned)
 	return &model.GenerateResponse{
 		Success:           true,
 		VerificationToken: rawToken,
-		Channel:           req.Channel,
-		RecipientMasked:   crypto.MaskRecipient(req.Target),
+		Deliveries:        deliveries,
+		Channel:           primaryChannel,
+		RecipientMasked:   crypto.MaskRecipient(primaryTarget),
 		ExpiresAt:         expiresAt,
 		TTLSeconds:        ttlSeconds,
 		OTPLength:         otpLength,
@@ -293,7 +347,13 @@ func (s *OTPService) Verify(ctx context.Context, projectID string, req *model.Ve
 
 	// Issue signed cryptographic proof
 	recipientDecrypted, _ := s.vault.DecryptField(session.RecipientEncrypted)
-	maskedRecipient := crypto.MaskRecipient(string(recipientDecrypted))
+	var targets []model.DeliveryTarget
+	maskedRecipient := ""
+	if err := json.Unmarshal(recipientDecrypted, &targets); err == nil && len(targets) > 0 {
+		maskedRecipient = crypto.MaskRecipient(targets[0].Target)
+	} else {
+		maskedRecipient = crypto.MaskRecipient(string(recipientDecrypted))
+	}
 
 	assertionToken, err := s.vault.IssueAttestationToken(maskedRecipient, session.Purpose, 15*time.Minute)
 	if err != nil {
