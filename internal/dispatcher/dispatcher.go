@@ -23,13 +23,13 @@ var (
 
 // DispatchRequest carries details for sending an OTP to an end recipient.
 type DispatchRequest struct {
-	Target      string
-	Channel     model.Channel
-	OTP         string
-	Purpose     string
-	SenderName  string
-	TTLMinutes  int
-	Metadata    map[string]string
+	Target     string
+	Channel    model.Channel
+	OTP        string
+	Purpose    string
+	SenderName string
+	TTLMinutes int
+	Metadata   map[string]string
 }
 
 // Dispatcher is the interface for delivering OTP messages.

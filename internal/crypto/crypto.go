@@ -26,10 +26,10 @@ var (
 
 // Vault handles field-level encryption, OTP hashing, and token generation.
 type Vault struct {
-	aesGCM      cipher.AEAD
-	masterKey   []byte
-	jwtSecret   []byte
-	hashSalt    []byte
+	aesGCM    cipher.AEAD
+	masterKey []byte
+	jwtSecret []byte
+	hashSalt  []byte
 }
 
 // NewVault initializes a new cryptographic vault.
@@ -208,12 +208,12 @@ func (v *Vault) IssueAttestationToken(targetMasked string, purpose string, valid
 
 	now := time.Now().UTC()
 	claims := map[string]interface{}{
-		"iss":             "authpin",
-		"sub":             targetMasked,
-		"purpose":         purpose,
-		"verified":        true,
-		"iat":             now.Unix(),
-		"exp":             now.Add(validity).Unix(),
+		"iss":      "authpin",
+		"sub":      targetMasked,
+		"purpose":  purpose,
+		"verified": true,
+		"iat":      now.Unix(),
+		"exp":      now.Add(validity).Unix(),
 	}
 	claimsBytes, _ := json.Marshal(claims)
 	claimsB64 := base64.RawURLEncoding.EncodeToString(claimsBytes)

@@ -73,8 +73,8 @@ func TestAPI_GenerateAndVerifyFlow(t *testing.T) {
 	// 2. Call Verify Endpoint
 	verifyPayload := map[string]interface{}{
 		"verification_token": genResp.VerificationToken,
-		"otp":               lastMsg.OTP,
-		"purpose":           "login",
+		"otp":                lastMsg.OTP,
+		"purpose":            "login",
 	}
 	verifyBody, _ := json.Marshal(verifyPayload)
 

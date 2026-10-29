@@ -54,8 +54,8 @@ type OTPSession struct {
 	RecipientEncrypted  []byte            `json:"recipient_encrypted"`   // AES-256-GCM encrypted recipient (email or phone)
 	RecipientLookupHash string            `json:"recipient_lookup_hash"` // Blind HMAC-SHA256 index for rate-limiting
 	Channel             Channel           `json:"channel"`
-	OTPType             OTPType           `json:"otp_type"`              // numeric or alphanumeric
-	OTPLength           int               `json:"otp_length"`            // exact length of generated code (4-32)
+	OTPType             OTPType           `json:"otp_type"`   // numeric or alphanumeric
+	OTPLength           int               `json:"otp_length"` // exact length of generated code (4-32)
 	Purpose             string            `json:"purpose"`
 	Attempts            int               `json:"attempts"`
 	MaxAttempts         int               `json:"max_attempts"`
@@ -69,13 +69,13 @@ type OTPSession struct {
 
 // GenerateRequest defines the payload for creating and delivering a new OTP.
 type GenerateRequest struct {
-	Target      string            `json:"target,omitempty"`      // Single target (email or phone)
-	Channel     Channel           `json:"channel,omitempty"`     // Single channel ("email" or "sms")
-	Channels    []DeliveryTarget  `json:"channels,omitempty"`    // Multiple channels for simultaneous multi-channel dispatch
+	Target      string            `json:"target,omitempty"`       // Single target (email or phone)
+	Channel     Channel           `json:"channel,omitempty"`      // Single channel ("email" or "sms")
+	Channels    []DeliveryTarget  `json:"channels,omitempty"`     // Multiple channels for simultaneous multi-channel dispatch
 	Purpose     string            `json:"purpose"`                // e.g. "login", "password_reset", "transaction"
 	Digits      int               `json:"digits,omitempty"`       // Deprecated: use OTPLength
-	OTPLength   int               `json:"otp_length,omitempty"`  // Custom OTP length (min: 4, max: 32, default: 6)
-	OTPType     OTPType           `json:"otp_type,omitempty"`    // "numeric" | "alphanumeric" (default: "numeric")
+	OTPLength   int               `json:"otp_length,omitempty"`   // Custom OTP length (min: 4, max: 32, default: 6)
+	OTPType     OTPType           `json:"otp_type,omitempty"`     // "numeric" | "alphanumeric" (default: "numeric")
 	TTLSeconds  int               `json:"ttl_seconds,omitempty"`  // Dynamic expiry in seconds (default: 300)
 	MaxAttempts int               `json:"max_attempts,omitempty"` // Max allowed retries (default: 3)
 	Metadata    map[string]string `json:"metadata,omitempty"`     // Audit metadata (IP, user agent, tenant ID)
@@ -85,8 +85,8 @@ type GenerateRequest struct {
 type GenerateResponse struct {
 	Success           bool             `json:"success"`
 	VerificationToken string           `json:"verification_token"` // Tracking hash passed downstream
-	Deliveries        []DeliveryResult `json:"deliveries"`          // Status of each simultaneous delivery channel
-	Channel           Channel          `json:"channel,omitempty"`   // Primary channel (backward-compat)
+	Deliveries        []DeliveryResult `json:"deliveries"`         // Status of each simultaneous delivery channel
+	Channel           Channel          `json:"channel,omitempty"`  // Primary channel (backward-compat)
 	RecipientMasked   string           `json:"recipient_masked"`   // Primary or combined masked recipients
 	ExpiresAt         time.Time        `json:"expires_at"`
 	TTLSeconds        int              `json:"ttl_seconds"`
@@ -103,13 +103,13 @@ type VerifyRequest struct {
 
 // VerifyResponse is returned after validation.
 type VerifyResponse struct {
-	Success         bool       `json:"success"`
-	Status          Status     `json:"status"`
-	Message         string     `json:"message"`
-	AttemptsUsed    int        `json:"attempts_used"`
-	RemainingTries  int        `json:"remaining_tries,omitempty"`
-	VerifiedAt      *time.Time `json:"verified_at,omitempty"`
-	AssertionToken  string     `json:"assertion_token,omitempty"` // Signed JWT verification proof
+	Success        bool       `json:"success"`
+	Status         Status     `json:"status"`
+	Message        string     `json:"message"`
+	AttemptsUsed   int        `json:"attempts_used"`
+	RemainingTries int        `json:"remaining_tries,omitempty"`
+	VerifiedAt     *time.Time `json:"verified_at,omitempty"`
+	AssertionToken string     `json:"assertion_token,omitempty"` // Signed JWT verification proof
 }
 
 // ResendRequest is submitted to redispatch an active OTP session.
